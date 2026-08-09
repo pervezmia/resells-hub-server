@@ -81,6 +81,14 @@ async function run() {
       });
     });
 
+    //get single api
+    app.get("/api/product/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await productCollection.findOne(query);
+      res.send(result);
+    });
+
     app.post("/api/product", async (req, res) => {
       const product = req.body;
       const result = await productCollection.insertOne(product);
