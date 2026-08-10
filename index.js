@@ -28,6 +28,7 @@ async function run() {
     const database = client.db("resells-hub");
     const productCollection = database.collection("products");
     const orderCollection = database.collection("orders");
+    const paymentCollection = database.collection("payments");
 
     app.get("/api/product", async (req, res) => {
       const { status, search, category, condition, sort, page, limit } =
@@ -131,12 +132,41 @@ async function run() {
       res.send(result);
     });
 
+    //product editing route
+    app.patch("/api/product/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = { $set: updatedData };
+      const result = await productCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
 
     //delete
     app.delete("/api/product/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await productCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    // Get payment history — buyer অনুযায়ী ফিল্টার
+    app.get("/api/payments", async (req, res) => {
+      const query = {};
+      if (req.query.buyerId) {
+        query.buyerId = req.query.buyerId;
+      }
+      const cursor = paymentCollection.find(query).sort({ paymentDate: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // Create payment record — সফল Stripe payment-এর পর কল হবে (checkout ধাপে)
+    app.post("/api/payments", async (req, res) => {
+      const payment = req.body;
+      payment.paymentDate = payment.paymentDate || new Date();
+      payment.paymentStatus = payment.paymentStatus || "pending";
+      const result = await paymentCollection.insertOne(payment);
       res.send(result);
     });
 
