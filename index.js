@@ -154,7 +154,6 @@ async function run() {
       res.send(result);
     });
 
-
     // buyer-এর wishlist দেখা
     app.get("/api/wishlist", async (req, res) => {
       const query = {};
@@ -193,6 +192,64 @@ async function run() {
       payment.paymentStatus = payment.paymentStatus || "pending";
       const result = await paymentCollection.insertOne(payment);
       res.send(result);
+    });
+
+    // Checkout সফল হওয়ার পর একসাথে multiple order + একটা payment record তৈরি
+    app.post("/api/checkout/complete", async (req, res) => {
+      const {
+        buyerId,
+        buyerName,
+        buyerEmail,
+        delivery,
+        cartItems,
+        transactionId,
+        amount,
+      } = req.body;
+
+      try {
+        // প্রতিটা cart item-এর জন্য আলাদা order (multi-seller cart সাপোর্ট করার জন্য)
+        const orders = cartItems.map((item) => ({
+          buyerInfo: { userId: buyerId, name: buyerName, email: buyerEmail },
+          sellerInfo: {
+            userId: item.sellerId,
+            name: item.sellerName,
+            email: item.sellerEmail,
+          },
+          productId: item.productId,
+          productTitle: item.title,
+          quantity: item.quantity,
+          price: item.price,
+          delivery,
+          paymentStatus: "paid",
+          orderStatus: "pending",
+          createdAt: new Date(),
+        }));
+
+        const orderResult = await orderCollection.insertMany(orders);
+
+        // একটা payment record — পুরো transaction-এর জন্য
+        const payment = {
+          transactionId,
+          buyerId,
+          orderIds: Object.values(orderResult.insertedIds).map((id) =>
+            id.toString(),
+          ),
+          amount,
+          paymentStatus: "success",
+          paymentMethod: "card",
+          paymentDate: new Date(),
+        };
+        const paymentResult = await paymentCollection.insertOne(payment);
+
+        res.send({
+          success: true,
+          orderIds: Object.values(orderResult.insertedIds),
+          paymentId: paymentResult.insertedId,
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Failed to complete checkout." });
+      }
     });
 
     //delete
