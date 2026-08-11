@@ -29,6 +29,7 @@ async function run() {
     const productCollection = database.collection("products");
     const orderCollection = database.collection("orders");
     const paymentCollection = database.collection("payments");
+    const wishlistCollection = database.collection("wishlists");
 
     app.get("/api/product", async (req, res) => {
       const { status, search, category, condition, sort, page, limit } =
@@ -142,14 +143,6 @@ async function run() {
       res.send(result);
     });
 
-    //delete
-    app.delete("/api/product/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await productCollection.deleteOne(query);
-      res.send(result);
-    });
-
     // Get payment history — buyer অনুযায়ী ফিল্টার
     app.get("/api/payments", async (req, res) => {
       const query = {};
@@ -161,12 +154,52 @@ async function run() {
       res.send(result);
     });
 
+
+    // buyer-এর wishlist দেখা
+    app.get("/api/wishlist", async (req, res) => {
+      const query = {};
+      if (req.query.buyerId) query.buyerId = req.query.buyerId;
+      const cursor = wishlistCollection.find(query).sort({ addedAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // wishlist-এ যোগ করা — duplicate ঠেকানো হচ্ছে
+    app.post("/api/wishlist", async (req, res) => {
+      const item = req.body;
+      const exists = await wishlistCollection.findOne({
+        buyerId: item.buyerId,
+        productId: item.productId,
+      });
+      if (exists) {
+        return res.send({ alreadyExists: true, _id: exists._id });
+      }
+      item.addedAt = new Date();
+      const result = await wishlistCollection.insertOne(item);
+      res.send(result);
+    });
+
+    // wishlist থেকে বাদ দেওয়া — buyerId + productId দিয়ে (item-এর _id না জানলেও চলবে)
+    app.delete("/api/wishlist", async (req, res) => {
+      const { buyerId, productId } = req.query;
+      const result = await wishlistCollection.deleteOne({ buyerId, productId });
+      res.send(result);
+    });
+
     // Create payment record — সফল Stripe payment-এর পর কল হবে (checkout ধাপে)
     app.post("/api/payments", async (req, res) => {
       const payment = req.body;
       payment.paymentDate = payment.paymentDate || new Date();
       payment.paymentStatus = payment.paymentStatus || "pending";
       const result = await paymentCollection.insertOne(payment);
+      res.send(result);
+    });
+
+    //delete
+    app.delete("/api/product/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await productCollection.deleteOne(query);
       res.send(result);
     });
 
