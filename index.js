@@ -30,6 +30,8 @@ async function run() {
     const orderCollection = database.collection("orders");
     const paymentCollection = database.collection("payments");
     const wishlistCollection = database.collection("wishlists");
+    const userCollection = database.collection("user");
+    const pendingCheckoutCollection = database.collection("pendingCheckouts");
 
     app.get("/api/product", async (req, res) => {
       const { status, search, category, condition, sort, page, limit } =
@@ -93,9 +95,12 @@ async function run() {
 
     app.post("/api/product", async (req, res) => {
       const product = req.body;
+      product.approvalStatus = product.approvalStatus || "pending";
       const result = await productCollection.insertOne(product);
       res.send(result);
     });
+
+    
 
     // Get orders — seller বা buyer অনুযায়ী ফিল্টার
     app.get("/api/orders", async (req, res) => {
@@ -140,6 +145,31 @@ async function run() {
       const filter = { _id: new ObjectId(id) };
       const updateDoc = { $set: updatedData };
       const result = await productCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    // Stripe checkout শুরুর আগে cart+delivery info সেভ করা
+    app.post("/api/checkout/prepare", async (req, res) => {
+      const { buyerId, buyerName, buyerEmail, delivery, cartItems, amount } =
+        req.body;
+      const result = await pendingCheckoutCollection.insertOne({
+        buyerId,
+        buyerName,
+        buyerEmail,
+        delivery,
+        cartItems,
+        amount,
+        createdAt: new Date(),
+      });
+      res.send({ checkoutId: result.insertedId });
+    });
+
+    // Payment Success page থেকে এই record fetch করার জন্য
+    app.get("/api/checkout/prepare/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await pendingCheckoutCollection.findOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
 
@@ -250,6 +280,75 @@ async function run() {
         console.error(err);
         res.status(500).send({ error: "Failed to complete checkout." });
       }
+    });
+
+    // সব user দেখা (admin only, ভবিষ্যতে middleware দিয়ে protect করা উচিত)
+    app.get("/api/users", async (req, res) => {
+      const query = {};
+      if (req.query.search) {
+        query.$or = [
+          { name: { $regex: req.query.search, $options: "i" } },
+          { email: { $regex: req.query.search, $options: "i" } },
+        ];
+      }
+      if (req.query.role) query.role = req.query.role;
+
+      const cursor = userCollection.find(query).sort({ createdAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // User status আপডেট (active/blocked)
+    app.patch("/api/users/:id/status", async (req, res) => {
+      const id = req.params.id;
+      const { status, requesterId } = req.body;
+
+      if (id === requesterId) {
+        return res
+          .status(403)
+          .send({ error: "You cannot change your own status." });
+      }
+
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = { $set: { status } };
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    // User ডিলিট
+    app.delete("/api/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const { requesterId } = req.query;
+
+      if (id === requesterId) {
+        return res
+          .status(403)
+          .send({ error: "You cannot delete your own account." });
+      }
+
+      const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
+      res.send(result);
+    });
+
+    // Admin-এর জন্য সব product (approvalStatus filter সহ)
+    app.get("/api/admin/products", async (req, res) => {
+      const query = {};
+      if (req.query.approvalStatus) {
+        query.approvalStatus = req.query.approvalStatus;
+      }
+      const cursor = productCollection.find(query).sort({ _id: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // Approve/Reject
+    app.patch("/api/admin/products/:id/approval", async (req, res) => {
+      const id = req.params.id;
+      const { approvalStatus } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = { $set: { approvalStatus } };
+      const result = await productCollection.updateOne(filter, updateDoc);
+      res.send(result);
     });
 
     //delete
