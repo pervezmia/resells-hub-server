@@ -9,6 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 const uri = process.env.MONGO_DB_URI;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -19,6 +20,11 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
+const JWKS = createRemoteJWKSet(new URL(`${process.env.CLIENT_URL}/api/auth/jwks`))
+
+
+
 
 // async function run() {
 //   try {
@@ -34,11 +40,27 @@ const userCollection = database.collection("user");
 const pendingCheckoutCollection = database.collection("pendingCheckouts");
 const sessionCollection = database.collection("session");
 
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization
-  console.log(authHeader);
+  if(!authHeader || !authHeader.startsWith("Bearer")){
+    res.status(401).send({message: "Unauthorized"})
+  }
 
-  next();
+  const token = authHeader.split(" ")[1]
+  if(!token){
+    res.status(401).send({message: "Unauthorized"})
+  }
+
+
+  try {
+    const {payload} = await jwtVerify(token, JWKS)
+    console.log(payload);
+    next()
+  } catch (error) {
+    console.log(error);
+    res.status(401).send({message: "Unauthorized"})
+  }
+
 }
 
 app.get("/api/product", async (req, res) => {
@@ -101,7 +123,7 @@ app.get("/api/product/:id", async (req, res) => {
   res.send(result);
 });
 
-app.post("/api/product",  async (req, res) => {
+app.post("/api/product", async (req, res) => {
   const product = req.body;
   product.approvalStatus = product.approvalStatus || "pending";
   const result = await productCollection.insertOne(product);
@@ -125,7 +147,7 @@ app.get("/api/orders", async (req, res) => {
   res.send(result);
 });
 
-app.post("/api/orders", async (req, res) => {
+app.post("/api/orders",  verifyToken , async (req, res) => {
   const order = req.body;
   order.orderStatus = order.orderStatus || "pending";
   order.paymentStatus = order.paymentStatus || "pending";
