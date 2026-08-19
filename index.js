@@ -40,28 +40,49 @@ const userCollection = database.collection("user");
 const pendingCheckoutCollection = database.collection("pendingCheckouts");
 const sessionCollection = database.collection("session");
 
+// const verifyToken = async (req, res, next) => {
+//   const authHeader = req.headers.authorization
+//   if(!authHeader || !authHeader.startsWith("Bearer")){
+//     res.status(401).send({message: "Unauthorized access"})
+//   }
+
+//   const token = authHeader.split(" ")[1]
+//   if(!token){
+//     res.status(401).send({message: "Unauthorized access"})
+//   }
+
+
+//   try {
+//     const {payload} = await jwtVerify(token, JWKS)
+//     console.log(payload);
+//     next()
+//   } catch (error) {
+//     console.log(error);
+//     res.status(401).send({message: "Unauthorized access"})
+//   }
+
+// }
+
 const verifyToken = async (req, res, next) => {
-  const authHeader = req.headers.authorization
-  if(!authHeader || !authHeader.startsWith("Bearer")){
-    res.status(401).send({message: "Unauthorized access"})
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).send({ message: "Unauthorized access" }); // return যোগ
   }
 
-  const token = authHeader.split(" ")[1]
-  if(!token){
-    res.status(401).send({message: "Unauthorized access"})
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" }); // return যোগ
   }
-
 
   try {
-    const {payload} = await jwtVerify(token, JWKS)
-    console.log(payload);
-    next()
+    const { payload } = await jwtVerify(token, JWKS);
+    req.user = payload; // পরে route-এ payload.sub (user id) ব্যবহার করা যাবে
+    next();
   } catch (error) {
     console.log(error);
-    res.status(401).send({message: "Unauthorized access"})
+    return res.status(401).send({ message: "Unauthorized access" }); // return যোগ (already ছিল ঠিক আছে, বাকি দুটোতে ছিল না)
   }
-
-}
+};
 
 app.get("/api/product", async (req, res) => {
   const { status, search, category, condition, sort, page, limit, sellerId } = req.query;
