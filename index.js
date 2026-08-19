@@ -43,12 +43,12 @@ const sessionCollection = database.collection("session");
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization
   if(!authHeader || !authHeader.startsWith("Bearer")){
-    res.status(401).send({message: "Unauthorized"})
+    res.status(401).send({message: "Unauthorized access"})
   }
 
   const token = authHeader.split(" ")[1]
   if(!token){
-    res.status(401).send({message: "Unauthorized"})
+    res.status(401).send({message: "Unauthorized access"})
   }
 
 
@@ -58,7 +58,7 @@ const verifyToken = async (req, res, next) => {
     next()
   } catch (error) {
     console.log(error);
-    res.status(401).send({message: "Unauthorized"})
+    res.status(401).send({message: "Unauthorized access"})
   }
 
 }
@@ -123,10 +123,29 @@ app.get("/api/product/:id", async (req, res) => {
   res.send(result);
 });
 
-app.post("/api/product", async (req, res) => {
+app.post("/api/product", verifyToken, async (req, res) => {
   const product = req.body;
   product.approvalStatus = product.approvalStatus || "pending";
   const result = await productCollection.insertOne(product);
+  res.send(result);
+});
+
+
+//product editing route
+app.patch("/api/product/:id", verifyToken, async (req, res) => {
+  const id = req.params.id;
+  const updatedData = req.body;
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = { $set: updatedData };
+  const result = await productCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+
+//delete
+app.delete("/api/product/:id", verifyToken,  async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await productCollection.deleteOne(query);
   res.send(result);
 });
 
@@ -157,7 +176,7 @@ app.post("/api/orders",  verifyToken , async (req, res) => {
 });
 
 // Update order status — Accept / Reject / Processing / Shipped / Delivered
-app.patch("/api/orders/:id", async (req, res) => {
+app.patch("/api/orders/:id", verifyToken, async (req, res) => {
   const id = req.params.id;
   const { orderStatus } = req.body;
   const filter = { _id: new ObjectId(id) };
@@ -166,18 +185,9 @@ app.patch("/api/orders/:id", async (req, res) => {
   res.send(result);
 });
 
-//product editing route
-app.patch("/api/product/:id", async (req, res) => {
-  const id = req.params.id;
-  const updatedData = req.body;
-  const filter = { _id: new ObjectId(id) };
-  const updateDoc = { $set: updatedData };
-  const result = await productCollection.updateOne(filter, updateDoc);
-  res.send(result);
-});
 
 // Stripe checkout শুরুর আগে cart+delivery info সেভ করা
-app.post("/api/checkout/prepare",  async (req, res) => {
+app.post("/api/checkout/prepare", verifyToken, async (req, res) => {
   const { buyerId, buyerName, buyerEmail, delivery, cartItems, amount } =
     req.body;
   const result = await pendingCheckoutCollection.insertOne({
@@ -222,7 +232,7 @@ app.get("/api/wishlist", async (req, res) => {
 });
 
 // wishlist-এ যোগ করা — duplicate ঠেকানো হচ্ছে
-app.post("/api/wishlist", async (req, res) => {
+app.post("/api/wishlist", verifyToken , async (req, res) => {
   const item = req.body;
   const exists = await wishlistCollection.findOne({
     buyerId: item.buyerId,
@@ -237,7 +247,7 @@ app.post("/api/wishlist", async (req, res) => {
 });
 
 // wishlist থেকে বাদ দেওয়া — buyerId + productId দিয়ে (item-এর _id না জানলেও চলবে)
-app.delete("/api/wishlist",  async (req, res) => {
+app.delete("/api/wishlist", verifyToken , async (req, res) => {
   const { buyerId, productId } = req.query;
   const result = await wishlistCollection.deleteOne({ buyerId, productId });
   res.send(result);
@@ -253,7 +263,7 @@ app.post("/api/payments", async (req, res) => {
 });
 
 // Checkout সফল হওয়ার পর একসাথে multiple order + একটা payment record তৈরি
-app.post("/api/checkout/complete",  async (req, res) => {
+app.post("/api/checkout/complete", verifyToken ,async (req, res) => {
   const {
     buyerId,
     buyerName,
@@ -311,7 +321,7 @@ app.post("/api/checkout/complete",  async (req, res) => {
 });
 
 // সব user দেখা (admin only, ভবিষ্যতে middleware দিয়ে protect করা উচিত)
-app.get("/api/users",  async (req, res) => {
+app.get("/api/users", verifyToken , async (req, res) => {
   const query = {};
   if (req.query.search) {
     query.$or = [
@@ -327,7 +337,7 @@ app.get("/api/users",  async (req, res) => {
 });
 
 // User status আপডেট (active/blocked)
-app.patch("/api/users/:id/status",  async (req, res) => {
+app.patch("/api/users/:id/status", verifyToken,  async (req, res) => {
   const id = req.params.id;
   const { status, requesterId } = req.body;
 
@@ -344,7 +354,7 @@ app.patch("/api/users/:id/status",  async (req, res) => {
 });
 
 // User ডিলিট
-app.delete("/api/users/:id",  async (req, res) => {
+app.delete("/api/users/:id", verifyToken, async (req, res) => {
   const id = req.params.id;
   const { requesterId } = req.query;
 
@@ -359,7 +369,7 @@ app.delete("/api/users/:id",  async (req, res) => {
 });
 
 // Admin-এর জন্য সব product (approvalStatus filter সহ)
-app.get("/api/admin/products",  async (req, res) => {
+app.get("/api/admin/products", verifyToken,  async (req, res) => {
   const query = {};
   if (req.query.approvalStatus) {
     query.approvalStatus = req.query.approvalStatus;
@@ -370,7 +380,7 @@ app.get("/api/admin/products",  async (req, res) => {
 });
 
 // Approve/Reject
-app.patch("/api/admin/products/:id/approval",  async (req, res) => {
+app.patch("/api/admin/products/:id/approval", verifyToken , async (req, res) => {
   const id = req.params.id;
   const { approvalStatus } = req.body;
   const filter = { _id: new ObjectId(id) };
@@ -379,13 +389,7 @@ app.patch("/api/admin/products/:id/approval",  async (req, res) => {
   res.send(result);
 });
 
-//delete
-app.delete("/api/product/:id",  async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  const result = await productCollection.deleteOne(query);
-  res.send(result);
-});
+
 
 // Send a ping to confirm a successful connection
 //   await client.db("admin").command({ ping: 1 });
