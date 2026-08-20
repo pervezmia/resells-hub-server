@@ -84,6 +84,58 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+// app.get("/api/product", async (req, res) => {
+//   const { status, search, category, condition, sort, page, limit, sellerId } = req.query;
+
+//   // নতুন params-এর কোনোটা আছে কিনা চেক — থাকলে "public listing mode"
+//   const isListingRequest =
+//     search !== undefined ||
+//     sort !== undefined ||
+//     page !== undefined ||
+//     limit !== undefined ||
+//     category !== undefined ||
+//     condition !== undefined;
+
+//   const query = {};
+//   if (status) query.status = status;
+//   if (sellerId) query["sellerInfo.userId"] = sellerId;
+//   if (search) query.title = { $regex: search, $options: "i" };
+//   if (category) query.category = category;
+//   if (condition) query.condition = condition;
+
+//   // পুরনো ব্যবহার — কোনো নতুন param নেই, ঠিক আগের মতোই raw array রিটার্ন করবে
+//   if (!isListingRequest) {
+//     const cursor = productCollection.find(query);
+//     const result = await cursor.toArray();
+//     return res.send(result);
+//   }
+
+//   // নতুন ব্যবহার — search/sort/pagination সহ object শেপে রিটার্ন করবে
+//   let sortOption = { _id: -1 }; // default: newest first
+//   if (sort === "price_asc") sortOption = { price: 1 };
+//   else if (sort === "price_desc") sortOption = { price: -1 };
+
+//   const pageNum = parseInt(page) || 1;
+//   const limitNum = limit !== undefined ? parseInt(limit) : 8;
+
+//   const totalCount = await productCollection.countDocuments(query);
+
+//   let cursor = productCollection.find(query).sort(sortOption);
+//   if (limitNum > 0) {
+//     const skip = (pageNum - 1) * limitNum;
+//     cursor = cursor.skip(skip).limit(limitNum);
+//   }
+
+//   const result = await cursor.toArray();
+
+//   res.send({
+//     products: result,
+//     totalCount,
+//     totalPages: limitNum > 0 ? Math.ceil(totalCount / limitNum) : 1,
+//     currentPage: pageNum,
+//   });
+// });
+
 app.get("/api/product", async (req, res) => {
   const { status, search, category, condition, sort, page, limit, sellerId } = req.query;
 
@@ -103,17 +155,24 @@ app.get("/api/product", async (req, res) => {
   if (category) query.category = category;
   if (condition) query.condition = condition;
 
-  // পুরনো ব্যবহার — কোনো নতুন param নেই, ঠিক আগের মতোই raw array রিটার্ন করবে
+  // পুরনো ব্যবহার — কোনো নতুন param নেই (My Products পেজ), ঠিক আগের মতোই raw array রিটার্ন করবে
+  // এখানে approvalStatus filter নেই — seller নিজের pending product-ও দেখতে পাবে
   if (!isListingRequest) {
     const cursor = productCollection.find(query);
     const result = await cursor.toArray();
     return res.send(result);
   }
 
-  // নতুন ব্যবহার — search/sort/pagination সহ object শেপে রিটার্ন করবে
+  // নতুন ব্যবহার — public listing (All Products/Categories/Home), object শেপে রিটার্ন করবে
   let sortOption = { _id: -1 }; // default: newest first
   if (sort === "price_asc") sortOption = { price: 1 };
   else if (sort === "price_desc") sortOption = { price: -1 };
+
+  // ✅ শুধু approved (অথবা পুরনো product যাদের approvalStatus field-ই নেই) দেখাবে
+  query.$or = [
+    { approvalStatus: "approved" },
+    { approvalStatus: { $exists: false } },
+  ];
 
   const pageNum = parseInt(page) || 1;
   const limitNum = limit !== undefined ? parseInt(limit) : 8;
@@ -135,6 +194,7 @@ app.get("/api/product", async (req, res) => {
     currentPage: pageNum,
   });
 });
+
 
 //get single api
 app.get("/api/product/:id", async (req, res) => {
@@ -394,6 +454,9 @@ app.get("/api/admin/products", verifyToken,  async (req, res) => {
   const query = {};
   if (req.query.approvalStatus) {
     query.approvalStatus = req.query.approvalStatus;
+  }
+  if (req.query.search) {
+    query.title = { $regex: req.query.search, $options: "i" };
   }
   const cursor = productCollection.find(query).sort({ _id: -1 });
   const result = await cursor.toArray();
