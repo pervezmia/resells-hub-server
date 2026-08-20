@@ -242,6 +242,13 @@ app.get("/api/orders", async (req, res) => {
   if (req.query.status) {
     query.orderStatus = req.query.status;
   }
+  if (req.query.search) {
+    query.$or = [
+      { "buyerInfo.name": { $regex: req.query.search, $options: "i" } },
+      { "sellerInfo.name": { $regex: req.query.search, $options: "i" } },
+      { productTitle: { $regex: req.query.search, $options: "i" } },
+    ];
+  }
   const cursor = orderCollection.find(query).sort({ createdAt: -1 });
   const result = await cursor.toArray();
   res.send(result);
