@@ -40,6 +40,7 @@ const userCollection = database.collection("user");
 const pendingCheckoutCollection = database.collection("pendingCheckouts");
 // const sessionCollection = database.collection("session");
 const recentlyViewedCollection = database.collection("recentlyViewed");
+const messageCollection = database.collection("messages");
 
 // const verifyToken = async (req, res, next) => {
 //   const authHeader = req.headers.authorization
@@ -569,6 +570,39 @@ app.get("/api/recently-viewed", async (req, res) => {
 });
 
 
+app.post("/api/contact", async (req, res) => {
+  const { name, email, subject, message } = req.body;
+  const result = await messageCollection.insertOne({
+    name,
+    email,
+    subject,
+    message,
+    createdAt: new Date(),
+    status: "unread",
+  });
+  res.send(result);
+});
+
+app.get("/api/contact", verifyToken, async (req, res) => {
+  const cursor = messageCollection.find({}).sort({ createdAt: -1 });
+  const result = await cursor.toArray();
+  res.send(result);
+});
+
+app.patch("/api/contact/:id/read", verifyToken, async (req, res) => {
+  const id = req.params.id;
+  const result = await messageCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { status: "read" } }
+  );
+  res.send(result);
+});
+
+app.delete("/api/contact/:id", verifyToken, async (req, res) => {
+  const id = req.params.id;
+  const result = await messageCollection.deleteOne({ _id: new ObjectId(id) });
+  res.send(result);
+});
 
 // Send a ping to confirm a successful connection
 //   await client.db("admin").command({ ping: 1 });
