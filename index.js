@@ -38,7 +38,8 @@ const paymentCollection = database.collection("payments");
 const wishlistCollection = database.collection("wishlists");
 const userCollection = database.collection("user");
 const pendingCheckoutCollection = database.collection("pendingCheckouts");
-const sessionCollection = database.collection("session");
+// const sessionCollection = database.collection("session");
+const recentlyViewedCollection = database.collection("recentlyViewed");
 
 // const verifyToken = async (req, res, next) => {
 //   const authHeader = req.headers.authorization
@@ -477,6 +478,49 @@ app.patch("/api/admin/products/:id/approval", verifyToken , async (req, res) => 
   const filter = { _id: new ObjectId(id) };
   const updateDoc = { $set: { approvalStatus } };
   const result = await productCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+
+
+// প্রোডাক্ট ভিউ রেকর্ড করা — upsert (একই buyer+product দেখলে শুধু viewedAt আপডেট হবে, duplicate তৈরি হবে না)
+app.post("/api/recently-viewed", verifyToken, async (req, res) => {
+  const { buyerId, productId, title, image, price, category } = req.body;
+
+  const result = await recentlyViewedCollection.updateOne(
+    { buyerId, productId },
+    {
+      $set: {
+        buyerId,
+        productId,
+        title,
+        image,
+        price,
+        category,
+        viewedAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+
+  res.send(result);
+});
+
+// buyer-এর recently viewed list — সাম্প্রতিক আগে, বর্তমান product বাদে
+app.get("/api/recently-viewed", async (req, res) => {
+  const { buyerId, exclude, limit } = req.query;
+  if (!buyerId) return res.send([]);
+
+  const query = { buyerId };
+  if (exclude) query.productId = { $ne: exclude };
+
+  const limitNum = limit ? parseInt(limit) : 8;
+
+  const cursor = recentlyViewedCollection
+    .find(query)
+    .sort({ viewedAt: -1 })
+    .limit(limitNum);
+
+  const result = await cursor.toArray();
   res.send(result);
 });
 
