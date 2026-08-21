@@ -301,14 +301,58 @@ app.get("/api/checkout/prepare/:id", async (req, res) => {
 });
 
 // Get payment history — buyer অনুযায়ী ফিল্টার
-app.get("/api/payments", async (req, res) => {
+
+// app.get("/api/payments", async (req, res) => {
+//   const query = {};
+//   if (req.query.buyerId) {
+//     query.buyerId = req.query.buyerId;
+//   }
+//   const cursor = paymentCollection.find(query).sort({ paymentDate: -1 });
+//   const result = await cursor.toArray();
+//   res.send(result);
+// });
+app.get("/api/payments", verifyToken, async (req, res) => {
   const query = {};
-  if (req.query.buyerId) {
-    query.buyerId = req.query.buyerId;
-  }
+  if (req.query.buyerId) query.buyerId = req.query.buyerId;
+  if (req.query.status) query.paymentStatus = req.query.status;
+
   const cursor = paymentCollection.find(query).sort({ paymentDate: -1 });
-  const result = await cursor.toArray();
-  res.send(result);
+  let payments = await cursor.toArray();
+
+  // শুধু admin-এর "সব transaction" ভিউতে (buyerId filter ছাড়া কল হলে) buyer info enrich করা হচ্ছে
+  if (!req.query.buyerId && payments.length) {
+    const buyerIds = [...new Set(payments.map((p) => p.buyerId))];
+    const objectIds = buyerIds
+      .map((id) => {
+        try {
+          return new ObjectId(id);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const buyers = await userCollection.find({ _id: { $in: objectIds } }).toArray();
+    const buyerMap = new Map(buyers.map((b) => [b._id.toString(), b]));
+
+    payments = payments.map((p) => ({
+      ...p,
+      buyerName: buyerMap.get(p.buyerId)?.name || "Unknown",
+      buyerEmail: buyerMap.get(p.buyerId)?.email || "",
+    }));
+  }
+
+  if (req.query.search) {
+    const s = req.query.search.toLowerCase();
+    payments = payments.filter(
+      (p) =>
+        p.transactionId?.toLowerCase().includes(s) ||
+        p.buyerName?.toLowerCase().includes(s) ||
+        p.buyerEmail?.toLowerCase().includes(s)
+    );
+  }
+
+  res.send(payments);
 });
 
 // buyer-এর wishlist দেখা
