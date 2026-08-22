@@ -38,32 +38,9 @@ const paymentCollection = database.collection("payments");
 const wishlistCollection = database.collection("wishlists");
 const userCollection = database.collection("user");
 const pendingCheckoutCollection = database.collection("pendingCheckouts");
-// const sessionCollection = database.collection("session");
 const recentlyViewedCollection = database.collection("recentlyViewed");
 const messageCollection = database.collection("messages");
 
-// const verifyToken = async (req, res, next) => {
-//   const authHeader = req.headers.authorization
-//   if(!authHeader || !authHeader.startsWith("Bearer")){
-//     res.status(401).send({message: "Unauthorized access"})
-//   }
-
-//   const token = authHeader.split(" ")[1]
-//   if(!token){
-//     res.status(401).send({message: "Unauthorized access"})
-//   }
-
-
-//   try {
-//     const {payload} = await jwtVerify(token, JWKS)
-//     console.log(payload);
-//     next()
-//   } catch (error) {
-//     console.log(error);
-//     res.status(401).send({message: "Unauthorized access"})
-//   }
-
-// }
 
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -86,57 +63,7 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-// app.get("/api/product", async (req, res) => {
-//   const { status, search, category, condition, sort, page, limit, sellerId } = req.query;
 
-//   // নতুন params-এর কোনোটা আছে কিনা চেক — থাকলে "public listing mode"
-//   const isListingRequest =
-//     search !== undefined ||
-//     sort !== undefined ||
-//     page !== undefined ||
-//     limit !== undefined ||
-//     category !== undefined ||
-//     condition !== undefined;
-
-//   const query = {};
-//   if (status) query.status = status;
-//   if (sellerId) query["sellerInfo.userId"] = sellerId;
-//   if (search) query.title = { $regex: search, $options: "i" };
-//   if (category) query.category = category;
-//   if (condition) query.condition = condition;
-
-//   // পুরনো ব্যবহার — কোনো নতুন param নেই, ঠিক আগের মতোই raw array রিটার্ন করবে
-//   if (!isListingRequest) {
-//     const cursor = productCollection.find(query);
-//     const result = await cursor.toArray();
-//     return res.send(result);
-//   }
-
-//   // নতুন ব্যবহার — search/sort/pagination সহ object শেপে রিটার্ন করবে
-//   let sortOption = { _id: -1 }; // default: newest first
-//   if (sort === "price_asc") sortOption = { price: 1 };
-//   else if (sort === "price_desc") sortOption = { price: -1 };
-
-//   const pageNum = parseInt(page) || 1;
-//   const limitNum = limit !== undefined ? parseInt(limit) : 8;
-
-//   const totalCount = await productCollection.countDocuments(query);
-
-//   let cursor = productCollection.find(query).sort(sortOption);
-//   if (limitNum > 0) {
-//     const skip = (pageNum - 1) * limitNum;
-//     cursor = cursor.skip(skip).limit(limitNum);
-//   }
-
-//   const result = await cursor.toArray();
-
-//   res.send({
-//     products: result,
-//     totalCount,
-//     totalPages: limitNum > 0 ? Math.ceil(totalCount / limitNum) : 1,
-//     currentPage: pageNum,
-//   });
-// });
 
 app.get("/api/product", async (req, res) => {
   const { status, search, category, condition, sort, page, limit, sellerId } = req.query;
@@ -301,17 +228,7 @@ app.get("/api/checkout/prepare/:id", async (req, res) => {
   res.send(result);
 });
 
-// Get payment history — buyer অনুযায়ী ফিল্টার
 
-// app.get("/api/payments", async (req, res) => {
-//   const query = {};
-//   if (req.query.buyerId) {
-//     query.buyerId = req.query.buyerId;
-//   }
-//   const cursor = paymentCollection.find(query).sort({ paymentDate: -1 });
-//   const result = await cursor.toArray();
-//   res.send(result);
-// });
 app.get("/api/payments", verifyToken, async (req, res) => {
   const query = {};
   if (req.query.buyerId) query.buyerId = req.query.buyerId;
@@ -454,8 +371,11 @@ app.post("/api/checkout/complete", verifyToken ,async (req, res) => {
   }
 });
 
+
+ 
+
 // সব user দেখা (admin only, ভবিষ্যতে middleware দিয়ে protect করা উচিত)
-app.get("/api/users", verifyToken , async (req, res) => {
+app.get("/api/users", verifyToken, async (req, res) => {
   const query = {};
   if (req.query.search) {
     query.$or = [
@@ -470,8 +390,37 @@ app.get("/api/users", verifyToken , async (req, res) => {
   res.send(result);
 });
 
+
+// শুধু count — public, marketplace stats-এর জন্য (Home/About page)
+app.get("/api/users/count", async (req, res) => {
+  const query = {};
+  if (req.query.role) query.role = req.query.role;
+  const count = await userCollection.countDocuments(query);
+  res.send({ count });
+});
+
+app.get("/api/orders/count", async (req, res) => {
+  const status = req.query.status;
+  const count = await orderCollection.countDocuments(status ? { orderStatus: status } : {});
+  res.send({ count });
+});
+
+ 
+app.get("/api/users/public", async (req, res) => {
+  const query = {};
+  if (req.query.role) query.role = req.query.role;
+
+  const users = await userCollection
+    .find(query, { projection: { name: 1, image: 1, role: 1 } })
+    .toArray();
+
+  res.send(users);
+}); 
+
+
+
 // User status আপডেট (active/blocked)
-app.patch("/api/users/:id/status", verifyToken,  async (req, res) => {
+app.patch("/api/users/:id/status",  verifyToken,  async (req, res) => {
   const id = req.params.id;
   const { status, requesterId } = req.body;
 
@@ -487,8 +436,9 @@ app.patch("/api/users/:id/status", verifyToken,  async (req, res) => {
   res.send(result);
 });
 
+
 // User ডিলিট
-app.delete("/api/users/:id", verifyToken, async (req, res) => {
+app.delete("/api/users/:id", verifyToken,  async (req, res) => {
   const id = req.params.id;
   const { requesterId } = req.query;
 
